@@ -1,0 +1,55 @@
+name: CI/CD Frontend
+on:
+  push:
+    branches: ["deploy"]
+env:
+  DOCKERHUB_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
+  AWS_REGION: us-east-1
+  FRONTEND_INSTANCE_ID: "i-0xxxxxxxxxxxxxx" # CAMBIAR POR EL ID DE TU EC2 FRONTEND
+  FRONTEND_APP_DIR: /home/ec2-user/frontend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Build and Push Frontend
+        run: |
+          docker build -f front_despacho/Dockerfile -t $DOCKERHUB_NAMESPACE/frontend-despachos:latest front_despacho
+          docker push $DOCKERHUB_NAMESPACE/frontend-despachos:latest
+  
+  deploy-aws:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup AWS
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials << EOF
+          [default]
+          aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_session_token=${{ secrets.AWS_SESSION_TOKEN }}
+          EOF
+          cat > ~/.aws/config << EOF
+          [default]
+          region=${AWS_REGION}
+          output=json
+          EOF
+      - name: Deploy vía SSM
+        run: |
+          aws ssm send-command \
+            --region "${AWS_REGION}" \
+            --document-name "AWS-RunShellScript" \
+            --instance-ids "${FRONTEND_INSTANCE_ID}" \
+            --parameters commands="[
+              \"mkdir -p ${FRONTEND_APP_DIR}\",
+              \"cd ${FRONTEND_APP_DIR}\",
+              \"curl -s https://raw.githubusercontent.com/${{ github.repository }}/deploy/docker-compose-frontend.yml -o docker-compose.yml\",
+              \"echo DOCKERHUB_USERNAME=${DOCKERHUB_NAMESPACE} > .env\",
+              \"docker compose pull\",
+              \"docker compose up -d\"
+            ]"

@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: mysql_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql # Named volume para persistencia
+    networks:
+      - back-tier
+    restart: always
+
+  api-ventas:
+    image: ${DOCKERHUB_USERNAME}/api-ventas:latest
+    container_name: api_ventas
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_ENDPOINT=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      - db
+    networks:
+      - back-tier
+    restart: always
+
+  api-despachos:
+    image: ${DOCKERHUB_USERNAME}/api-despachos:latest
+    container_name: api_despachos
+    ports:
+      - "8082:8082"
+    environment:
+      - DB_ENDPOINT=db
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      - db
+    networks:
+      - back-tier
+    restart: always
+
+volumes:
+  db_data: # Se usa Named Volume por seguridad y fácil respaldo
+
+networks:
+  back-tier:
+    driver: bridge
